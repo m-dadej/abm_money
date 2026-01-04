@@ -1,0 +1,652 @@
+using Random
+using LinearAlgebra
+using Distributions
+using StatsBase
+using DataFrames
+using Plots
+
+# ABM model analyzing the monetary system and money creation
+
+########## Agent definitions ##########
+
+mutable struct Bank{V <: AbstractFloat}
+    const id::Int64
+
+    # balance sheet - assets
+    reserves::V        # central bank money
+    bonds::V         # government bonds
+    loans::V        # bank loans
+    fixed_assets::V  # e.g. buildings, computers, etc. (mostly as a initial capital)
+
+    # balance sheet - liabilities
+    deposits::V     # bank deposits
+end    
+
+mutable struct Household{V <: AbstractFloat}
+    
+    const id::Int64
+    bank_id::Int64  # bank where the household has an account
+    employer_id::Int64  # firm where the household is employed
+    
+    # balance sheet - assets
+    shares::Vector{Float64} # shares owned in firms i (position is firm id)
+    deposits::V     # bank deposits
+    bonds::V        # government bonds
+    real_estate::V  # housing, land, etc.
+
+    # balance sheet - liabilities
+    loans::V        # bank loans
+
+    # memory
+    w::V  # last period wage
+end
+
+mutable struct Firm{V <: AbstractFloat}
+
+    const id::Int64
+    bank_id::Int64  # bank where the firm has an account
+    employees_ids::Vector{Int64}  # list of household ids employed by the firm
+    
+    # balance sheet - assets
+    deposits::V      # bank deposits
+    fixed_assets::V  # machinery, equipment, etc.
+    inventory::V     # goods in stock (units of output)
+
+    # balance sheet - liabilities
+    loans::V        # bank loans
+
+    # memory
+    labour_cost::V  # last period total labour cost
+    p::V             # price level of the firm's product
+end
+
+
+mutable struct CentralBank{V <: AbstractFloat}
+
+    # balance sheet - assets
+    bonds::V                    # government bonds
+    reserve_assets::V           # foreign exchange reserves, gold, etc.
+
+    # balance sheet - liabilities
+    reserves::V     # central bank money issued to banks or government
+end
+
+mutable struct Government{V <: AbstractFloat}
+
+    # balance sheet - assets
+    fixed_assets::V   # e.g. infrastructure
+    reserves::V     # reserves at the central bank account
+
+    # balance sheet - liabilities
+    bonds::V        # government debt
+end
+
+Base.@kwdef mutable struct monetary_model{V <: AbstractFloat}
+    
+    # memory
+    p::V = 1.0 # overall price level
+
+    # model parameters
+    min_reserve_ratio::V = 0.05
+    tfr::V = 1.2 # total factor productivity
+    α::V = 0.35 # capital elasticity
+    β::V = 0.7 # labor elasticity
+    n_hh::Int64 = 0 # number of households
+    n_banks::Int64 = 0 # number of banks
+    n_firms::Int64 = 0 # number of firms
+    central_bank::CentralBank{V} = CentralBank{V}(0.0, 0.0, 0.0)
+    government::Government{V} = Government{V}(0.0, 0.0, 0.0)
+
+    banks::Vector{Bank{V}} = Bank[]
+    households::Vector{Household{V}} = Household[]
+    firms::Vector{Firm{V}} = Firm[]
+
+    
+end
+
+######### balance sheet analysis functions ##########
+
+function capital(agent::Union{Bank, Household, Firm}, model::monetary_model)
+    if agent isa Bank
+        return agent.reserves + agent.bonds + agent.loans + agent.fixed_assets - agent.deposits
+    elseif agent isa Household
+        return agent.deposits + agent.bonds + agent.real_estate - agent.loans
+    elseif agent isa Firm
+        return agent.deposits + agent.fixed_assets + (agent.inventory) - agent.loans # assuming inventory valued at price level 1.0
+    end
+end
+
+function capital(agents::Vector{T}, model::monetary_model) where T<:Union{Bank, Household, Firm}
+    
+    capitals = zeros(Float64, length(agents))
+    
+    for agent in agents
+        capitals[agent.id] = capital(agent, model)
+    end    
+
+    return capitals
+end
+
+function excess_reserves(bank::Bank{Float64}, model::monetary_model)
+    return bank.reserves - (bank.deposits * model.min_reserve_ratio)
+end
+
+# show aggregate balance sheet of agents with capital calculation
+function aggregate_bs(agents::Vector{T}, model::monetary_model) where T<:Union{Bank,Household}
+
+    total_reserves = 0.0
+    total_bonds = 0.0
+    total_loans = 0.0
+    total_deposits = 0.0
+    total_real_estate = 0.0
+    total_fixed_assets = 0.0
+
+    for agent in agents
+        if agent isa Bank
+            total_reserves += agent.reserves
+            total_bonds += agent.bonds
+            total_loans += agent.loans
+            total_fixed_assets += agent.fixed_assets
+            total_deposits += agent.deposits
+        elseif agent isa Household
+            total_real_estate += agent.real_estate
+            total_deposits += agent.deposits
+            total_bonds += agent.bonds
+            total_loans += agent.loans
+        end
+    end
+
+    total_capital = sum(capital(agents, model))
+
+    
+    if agents[1] isa Bank
+        println("Aggregate Balance Sheet of banks:")
+        println("Total Reserves: $total_reserves")
+        println("Total Fixed Assets: $total_fixed_assets")
+    else
+        println("Aggregate Balance Sheet of households:")
+        println("Total Real Estate: $total_real_estate")
+    end
+    println("Total Bonds: $total_bonds")
+    println("Total Loans: $total_loans")
+    println("Total Deposits: $total_deposits")
+    println("Total Capital: $total_capital")
+end
+
+function money_supply(model::monetary_model, type::Symbol)
+    total_deposits = 0.0
+
+    if type == :MB
+        return model.central_bank.reserves
+    elseif type == :M1
+        for bank in model.banks
+            total_deposits += bank.deposits
+        end
+        return total_deposits
+    else
+        error("Unknown money supply type: $type")
+    end
+end
+
+price_level(model::monetary_model) = mean([model.firms[i].p for i in 1:model.n_firms])
+
+# current possible production of firm 
+# returns a product in unit of output (not monetary value)
+function firm_capacity(firm::Firm{Float64}, model::monetary_model)
+
+    #@assert 1 - model.α - model.β < 0 "Returns to scale must be decreasing (1 - α - β < 0)"
+
+    infrastructure_rate = model.government.fixed_assets / model.n_firms
+    n_employees = length(firm.employees_ids)
+
+    prod = model.tfr * n_employees^(model.β) * firm.fixed_assets^(model.α) * infrastructure_rate^(1 - model.α - model.β)
+
+    return prod
+end    
+
+function firm_capacity(model::monetary_model)
+
+    prod = zeros(Float64, length(model.firms))
+    
+    for firm in model.firms
+        prod[firm.id] = firm_capacity(firm, model)
+    end
+
+    return sum(prod)
+end
+
+function match_probability(firm::Firm{Float64}, model::monetary_model)
+
+    rel_size_prob = firm_capacity(firm, model) / firm_capacity(model)
+
+    # higher price lower probability
+    price_prob = (exp(-2.0 * firm.p)) / sum([exp(-2.0 * model.firms[i].p) for i in 1:model.n_firms])
+
+    return (rel_size_prob + price_prob) / 2.0
+end
+
+match_probability(model::monetary_model) = [match_probability(model.firms[i], model) for i in 1:model.n_firms]
+
+function production(firm::Firm{Float64}, model::monetary_model)
+
+    capacity = firm_capacity(firm, model)
+
+    inv_target = 60 * firm.p # target inventory level
+
+    #actual_production = capacity * (1 - (firm.inventory / inv_target))^2
+    actual_production = firm.inventory < inv_target ? capacity : 0.0
+
+    return actual_production
+end
+
+function consumption(household::Household{Float64}, model::monetary_model)
+
+    consumption_amount = min(household.w * 0.1 + household.deposits * 0.01, household.deposits)
+
+    return consumption_amount
+end
+
+function account_check(model::monetary_model)
+
+    for bank in model.banks
+        @assert bank.deposits >= -0.0001 "Bank $(bank.id) has negative deposits!"
+        @assert bank.reserves >= -0.0001 "Bank $(bank.id) has negative reserves!"
+        @assert bank.loans >= -0.0001 "Bank $(bank.id) has negative loans!"
+        @assert bank.bonds >= -0.0001 "Bank $(bank.id) has negative bonds!"
+        @assert excess_reserves(bank, model) >= -0.0001 "Bank $(bank.id) has negative excess reserves!"
+        @assert capital(bank, model) >= -0.0001 "Bank $(bank.id) has negative capital!"
+    end    
+
+    for household in model.households
+        @assert household.deposits >= -0.0001 "Household $(household.id) has negative deposits!"
+        @assert household.real_estate >= -0.0001 "Household $(household.id) has negative real estate!"
+        @assert household.loans >= -0.0001 "Household $(household.id) has negative loans!"
+        @assert household.bonds >= -0.0001 "Household $(household.id) has negative bonds!"
+    end
+
+    for firm in model.firms
+        @assert firm.deposits >= -0.0001 "Firm $(firm.id) has negative deposits!"
+        @assert firm.fixed_assets >= -0.0001 "Firm $(firm.id) has negative fixed assets!"
+        @assert firm.loans >= -0.0001 "Firm $(firm.id) has negative loans!"
+        @assert firm.inventory >= -0.0001 "Firm $(firm.id) has negative inventory!"
+        @assert capital(firm, model) >= -0.0001 "Firm $(firm.id) has negative capital!"
+    end
+
+    @assert model.government.bonds >= -0.0001 "Government has negative bonds!"
+    @assert model.government.reserves >= -0.0001 "Government has negative reserves!"
+
+    @assert model.central_bank.bonds >= -0.0001 "Central Bank has negative bonds!"
+    @assert model.central_bank.reserve_assets >= -0.0001 "Central Bank has negative reserve assets!"
+    @assert model.central_bank.reserves >= -0.0001 "Central Bank has negative reserves!"
+
+end
+
+######### transaction funcitons ###########
+
+function sell_bond!(government::Government{Float64}, bank::Bank{Float64}, amount::Float64)
+
+    government.bonds += amount
+    government.reserves += amount
+
+    bank.bonds += amount
+    bank.reserves -= amount
+end 
+
+function take_loan!(household::Household{Float64}, loan_amount::Float64, model::monetary_model)
+
+    bank = model.banks[household.bank_id]
+
+    # increase household deposits and loans
+    household.deposits += loan_amount
+    household.loans += loan_amount
+
+    # increase bank loans and deposits
+    bank.loans += loan_amount
+    bank.deposits += loan_amount
+    # bank creates money (deposit) by issuing the loan
+end
+
+function transaction!(from::Household{Float64}, to::Household{Float64}, amount::Float64, what::Symbol)
+
+    if what == :real_estate
+        # transfer real estate 'from' 'to'
+        from.real_estate -= amount
+        to.real_estate += amount
+
+        # pay for the real_estate
+        from.deposits += amount
+        to.deposits -= amount
+    elseif what == :deposit
+        # transfer deposits from 'from' to 'to'
+        from.deposits -= amount
+        to.deposits += amount
+    end
+
+    # transfer deposits and reserves from the banks
+    model.banks[from.bank_id].deposits += amount
+    model.banks[to.bank_id].deposits -= amount
+    model.banks[from.bank_id].reserves += amount
+    model.banks[to.bank_id].reserves -= amount
+    
+end
+
+############ initiate model ###########
+
+function populate!(model::monetary_model, 
+                    total_deposit::Float64, 
+                    total_bank_capital::Float64,
+                    total_real_estate::Float64,
+                    firm_total_deposits::Float64,
+                    firm_capital_goods::Float64,
+                    gov_fixed_assets::Float64, 
+                    n_hh::Int64, 
+                    n_banks::Int64,
+                    n_firms::Int64)
+
+    model.n_hh = n_hh
+    model.n_banks = n_banks
+    model.n_firms = n_firms
+
+    model.central_bank = CentralBank{Float64}(0.0, 
+                                              total_deposit + firm_total_deposits, 
+                                              total_deposit + firm_total_deposits)
+    model.government = Government{Float64}(gov_fixed_assets, 0.0, 0.0)
+
+    ###### distribute bank capital and deposits among banks #####
+    bank_shares = rand(Pareto(1.5, 1), n_banks)
+    bank_shares = bank_shares ./ sum(bank_shares)
+
+    bank_capital_dsitribution = bank_shares .* total_bank_capital
+
+    for i in 1:n_banks
+        push!(model.banks, Bank{Float64}(i, 0.0, 0.0, 0.0, bank_capital_dsitribution[i], 0.0))
+    end
+
+    ###### distribute deposit among households #####
+    deposit_dsitribution = rand(Pareto(1.1, 1), n_hh)
+    deposit_dsitribution .= deposit_dsitribution ./ sum(deposit_dsitribution) .* total_deposit
+
+    ###### assign each household and its deposit to a bank #####
+    for i in 1:n_hh
+        bank_id = sample(1:n_banks, Weights(bank_shares)) # chance of choosing a bank proportional to its size
+        push!(model.households, Household{Float64}(i, bank_id, 0, zeros(Float64, model.n_firms), deposit_dsitribution[i], 0.0, 0.0, 0.0, 1.0))
+
+        model.banks[bank_id].deposits += model.households[i].deposits
+        model.banks[bank_id].reserves += model.households[i].deposits
+    end
+
+    ###### randomly assign normalized shares to households #####
+    shares_matrix = rand(Pareto(1.1, 1), model.n_hh, model.n_firms)
+    shares_matrix ./= sum(shares_matrix, dims=1)
+
+    for i in 1:model.n_hh
+        for j in 1:model.n_firms
+            model.households[i].shares[j] = shares_matrix[i, j]
+        end
+    end
+
+    ###### distribute real estate among first households #####
+    n_house = total_real_estate / 1_000
+    owners = shuffle(vcat([1 for i in 1:Int(n_house)], [0 for i in 1:(n_hh - Int(n_house))]))
+
+    for i in 1:n_hh
+        model.households[i].real_estate = 1_000 * owners[i]
+    end
+
+    ##### distribute firm deposits among firms #####
+    firm_deposit_distribution = rand(Pareto(1.3, 1), n_firms)
+    firm_deposit_distribution .= firm_deposit_distribution ./ sum(firm_deposit_distribution) .* firm_total_deposits
+    for i in 1:n_firms
+        bank_id = sample(1:n_banks, Weights(bank_shares)) # chance of choosing a bank proportional to its size
+        push!(model.firms, Firm{Float64}(i, bank_id, Float64[], firm_deposit_distribution[i], firm_capital_goods / n_firms, 0.0, 0.0, 0.0, 0.0))
+
+        model.banks[bank_id].deposits += model.firms[i].deposits
+        model.banks[bank_id].reserves += model.firms[i].deposits
+    end
+    
+    ##### Check accounts #####
+    account_check(model)
+    @assert all(capital(model.households, model) .>= 0.0) "Some households have negative capital after population!"
+    @assert all(capital(model.banks, model) .>= 0.0) "Some banks have negative capital after population!"
+end
+
+function populate_labour_market!(model::monetary_model)
+
+    # assign each household to a firm as an employer. proportional to firm size (capital)
+    firm_sizes = zeros(Float64, model.n_firms)
+    for firm in model.firms
+        firm_sizes[firm.id] = firm.fixed_assets
+    end
+    
+    firm_size_weights = firm_sizes ./ sum(firm_sizes)
+    
+    for household in model.households
+        employer_id = sample(1:model.n_firms, Weights(firm_size_weights))
+        household.employer_id = employer_id
+        push!(model.firms[employer_id].employees_ids, household.id)
+    end
+
+end    
+
+########### scenario ############
+
+function mortgage_scenario!(model::monetary_model,
+                            n_mortgages::Int64)
+
+    non_owners = findall([model.households[i].real_estate == 0 for i in 1:model.n_hh])
+    buyers = shuffle(non_owners)[1:n_mortgages]
+    sellers = findall([i ∉ non_owners for i in 1:model.n_hh]) # possible sellers
+    sellers = shuffle(sellers)[1:n_mortgages] # sample from possible sellers
+
+    for pair in 1:length(sellers)
+
+        take_loan!(model.households[buyers[pair]], 
+                   model.households[sellers[pair]].real_estate, 
+                   model)
+        transaction!(model.households[sellers[pair]], 
+                     model.households[buyers[pair]],
+                     model.households[sellers[pair]].real_estate,
+                     :real_estate)
+    end    
+
+    account_check(model)
+end
+
+function issue_bonds_scenario!(model::monetary_model,
+                                amount::Float64,
+                                notional::Float64)
+
+    n_bonds = amount / notional
+
+    capable_banks = findall([excess_reserves(model.banks[i], model) >= notional for i in 1:model.n_banks])
+    selected_banks = shuffle(capable_banks)[1:Int(min(length(capable_banks), n_bonds))]
+    
+    for bank_id in selected_banks
+        sell_bond!(model.government, model.banks[bank_id], notional)
+    end
+end
+
+function helicopter_money_scenario!(model::monetary_model,
+                                    amount_per_household::Float64)
+
+    amonut = amount_per_household * model.n_hh                                
+    
+    # finance from all banks without check if they have enough reserves
+    for bank_id in 1:model.n_banks
+        sell_bond!(model.government, model.banks[bank_id], amonut / model.n_banks)
+    end
+
+    for hh in model.households
+        hh.deposits += amount_per_household
+        model.banks[hh.bank_id].deposits += amount_per_household
+        model.banks[hh.bank_id].reserves += amount_per_household
+        model.government.reserves -= amount_per_household
+    end
+    
+    account_check(model)
+end
+
+########### simulation ############
+
+function simulate(model, T::Int64, verbose::Bool)
+
+    aggregate_stats = DataFrame(money = zeros(Float64, T), 
+                                 hh_capital = zeros(Float64, T), 
+                                 firm_capital = zeros(Float64, T),
+                                 reserves = zeros(Float64, T), 
+                                 inventory = zeros(Float64, T), 
+                                 production = zeros(Float64, T),
+                                 consumption = zeros(Float64, T),
+                                 p = zeros(Float64, T))
+
+    ###### initial conditions #####
+    p = 1.0 # price level
+    [model.firms[i].p = p for i in 1:model.n_firms]
+
+    ##### simulation #####
+    for t in 1:T
+
+        ###### payout of wages #####
+        for firm in model.firms 
+
+            # skip if not firm's turn - each firm pays once in a month
+            #firm.id % 30 != t % 30 ? continue : nothing
+            firm.labour_cost = 0.0
+            for employee in firm.employees_ids
+                wage = 1
+                model.households[employee].deposits += wage
+                model.households[employee].w = wage
+                firm.deposits -= wage
+                firm.labour_cost += wage
+
+                model.banks[model.households[employee].bank_id].deposits += wage
+                model.banks[firm.bank_id].deposits -= wage
+
+                model.banks[model.households[employee].bank_id].reserves += wage
+                model.banks[firm.bank_id].reserves -= wage
+            end
+        end    
+
+        ###### produce and set price ######
+        GDP = 0.0
+        for firm in model.firms
+            
+            # skip if not firm's turn - each firm produces once a week
+            #firm.id % 7 != t % 7 ? continue : nothing
+            prod = production(firm, model)
+
+            GDP += prod
+            firm.inventory += prod
+
+            # price setting
+            firm.p *= (firm.labour_cost / (firm_capacity(firm, model) * firm.p)) * (price_level(model) / firm.p)
+            #println("Firm $(firm.id), labour diff : $(firm.labour_cost / firm_capacity(firm, model)), rel price: $(price_level(model) / firm.p)")
+        end
+        #println(price_level(model))
+
+        ###### consume #####
+        total_consumption = 0.0
+        for household in model.households
+            
+            # skip if not household's turn - each household consumes once every 3 days
+            #household.id % 3 != t % 3 ? continue : nothing
+
+            consumption_amount = consumption(household, model)
+            consumption_amount == 0.0 ? continue : nothing
+
+            # search and match with a firm
+            no_inventory_firms = findall([(model.firms[i].inventory * model.firms[i].p) < consumption_amount for i in 1:model.n_firms])  # firms unable to satisfy consumption
+
+            if length(no_inventory_firms) == model.n_firms
+                verbose ? println("No firm at time $t has enough inventory for household $(household.id)'s consumption.") : nothing
+                continue
+            end
+            matching_probs = match_probability(model)                       # get matching probabilities
+            #println(matching_probs)
+            matching_probs[no_inventory_firms] .= 0.0                       # set probabilities of unable firms to zero
+            if any(isnan.(matching_probs))
+                error("NaN encountered in matching probabilities at time $t for household $(household.id). | Matching probs: $matching_probs")
+            end
+            matching_probs .= matching_probs ./ sum(matching_probs)         # re-normalize
+            
+            seller_id = sample(1:model.n_firms, Weights(matching_probs))    # sample
+
+            # transaction operations
+            household.deposits -= consumption_amount 
+            total_consumption += consumption_amount
+
+            model.banks[household.bank_id].deposits -= consumption_amount
+            model.banks[household.bank_id].reserves -= consumption_amount
+
+            model.firms[seller_id].deposits += consumption_amount
+            model.firms[seller_id].inventory -= (consumption_amount / model.firms[seller_id].p)
+
+            model.banks[model.firms[seller_id].bank_id].deposits += consumption_amount
+            model.banks[model.firms[seller_id].bank_id].reserves += consumption_amount
+        end    
+
+        ###### dividend payout #####
+        for firm in model.firms 
+            # pay once in a year
+            firm.id % 4 != t % 4 ? continue : nothing
+
+            excess_capital = firm.deposits - (firm.fixed_assets * 0.4)
+            excess_capital <= 0.0 ? continue : nothing
+            #println("Firm $(firm.id) pays dividend of $excess_capital at time $t.")
+
+            for household in model.households
+                dividend = excess_capital * household.shares[firm.id]
+                household.deposits += dividend
+                firm.deposits -= dividend
+
+                model.banks[household.bank_id].deposits += dividend
+                model.banks[firm.bank_id].deposits -= dividend
+
+                model.banks[household.bank_id].reserves += dividend
+                model.banks[firm.bank_id].reserves -= dividend
+            end
+        end    
+
+        model.p = price_level(model)
+
+        ###### record aggregate stats at time t #####
+        aggregate_stats.money[t] = money_supply(model, :M1)
+        aggregate_stats.hh_capital[t] = sum(capital(model.households, model))
+        aggregate_stats.firm_capital[t] = sum(capital(model.firms, model))
+        aggregate_stats.reserves[t] = money_supply(model, :MB)
+        aggregate_stats.inventory[t] = sum([model.firms[i].inventory for i in 1:model.n_firms])
+        aggregate_stats.production[t] = GDP
+        aggregate_stats.consumption[t] = total_consumption
+        aggregate_stats.p[t] = price_level(model)
+
+        account_check(model)
+        verbose ? println("Day $t completed.") : nothing
+    end    
+
+    # progress bar
+    if verbose
+        println("Progress: $t/$n_days")
+    end
+
+    return aggregate_stats
+end    
+
+########## test the model ###########
+
+Random.seed!(45)
+model = monetary_model{Float64}()
+
+populate!(model,        # model
+            200_000.0,  # total deposits of households
+            100_000.0,  # total bank capital
+            200_000.0, # total real estate
+            100_000.0, # firm total deposits
+            400_000.0,  # firm capital goods
+            800_000.0, # government fixed assets
+            1000,      # number of households
+            5,         # number of banks
+            100)       # number of firms
+
+populate_labour_market!(model)
+
+df = simulate(model, 21, false)
