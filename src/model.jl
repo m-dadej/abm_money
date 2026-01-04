@@ -5,14 +5,7 @@ using StatsBase
 using DataFrames
 using Plots
 
-include("central_bank.jl")
-include("government.jl")
-include("banks.jl")
-include("households.jl")
-include("firms.jl")
-include("scenarios.jl")
-include("simulate.jl")
-
+include("agents.jl")
 
 Base.@kwdef mutable struct monetary_model{V <: AbstractFloat}
     
@@ -33,10 +26,15 @@ Base.@kwdef mutable struct monetary_model{V <: AbstractFloat}
     banks::Vector{Bank{V}} = Bank[]
     households::Vector{Household{V}} = Household[]
     firms::Vector{Firm{V}} = Firm[]
-
-    
 end
 
+include("central_bank.jl")
+include("government.jl")
+include("firms.jl")
+include("households.jl")
+include("scenarios.jl")
+include("banks.jl")
+include("simulate.jl")
 
 function money_supply(model::monetary_model, type::Symbol)
     total_deposits = 0.0

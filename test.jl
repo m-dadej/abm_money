@@ -20,7 +20,12 @@ populate_labour_market!(model)
 
 
 
-df = simulate(model, 21, false)
+df = simulate(model, 365*2, 
+                wage_step=7,
+                produce_step=7,
+                consume_step=3,
+                dividend_step=365,
+                verbose=true)
 
 plot(df.inventory, title = "Total Inventory")
 plot(df.consumption, title = "Daily Consumption")

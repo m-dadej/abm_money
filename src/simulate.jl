@@ -1,9 +1,5 @@
 ############ initiate model ###########
 
-Base.@kwdef mutable struct simulation_params{V <: AbstractFloat}
-
-end    
-
 function populate!(model::monetary_model, 
                     total_deposit::Float64, 
                     total_bank_capital::Float64,
@@ -103,12 +99,12 @@ end
 ########### simulation ############
 
 function simulate(model, 
-                  T::Int64, 
-                  wage_step::Int64,
-                  produce_step::Int64,
-                  consume_step::Int64,
-                  dividend_step::Int64,
-                  verbose::Bool)
+                  T::Int64; 
+                  wage_step::Int64 = 30,
+                  produce_step::Int64 = 7,
+                  consume_step::Int64 = 3,
+                  dividend_step::Int64 = 365,
+                  verbose::Bool = true)
 
     aggregate_stats = DataFrame(money = zeros(Float64, T), 
                                  hh_capital = zeros(Float64, T), 
@@ -177,7 +173,7 @@ function simulate(model,
             no_inventory_firms = findall([(model.firms[i].inventory * model.firms[i].p) < consumption_amount for i in 1:model.n_firms])  # firms unable to satisfy consumption
 
             if length(no_inventory_firms) == model.n_firms
-                verbose ? println("No firm at time $t has enough inventory for household $(household.id)'s consumption.") : nothing
+                #verbose ? println("No firm at time $t has enough inventory for household $(household.id)'s consumption.") : nothing
                 continue
             end
             matching_probs = match_probability(model)                       # get matching probabilities
@@ -239,13 +235,22 @@ function simulate(model,
         aggregate_stats.p[t] = price_level(model)
 
         account_check(model)
-        verbose ? println("Day $t completed.") : nothing
+
+        # progress bar
+        if verbose
+            progress = round(t / T * 100)
+            print("\r[")
+            for i in 1:progress
+                print("=")
+            end
+            for i in (progress + 1):100
+                print(" ")
+            end
+            print("] $progress %")
+        end
     end    
 
-    # progress bar
-    if verbose
-        println("Progress: $t/$n_days")
-    end
+    
 
     return aggregate_stats
 end    

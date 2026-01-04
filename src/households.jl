@@ -1,24 +1,3 @@
-
-
-mutable struct Household{V <: AbstractFloat}
-    
-    const id::Int64
-    bank_id::Int64  # bank where the household has an account
-    employer_id::Int64  # firm where the household is employed
-    
-    # balance sheet - assets
-    shares::Vector{Float64} # shares owned in firms i (position is firm id)
-    deposits::V     # bank deposits
-    bonds::V        # government bonds
-    real_estate::V  # housing, land, etc.
-
-    # balance sheet - liabilities
-    loans::V        # bank loans
-
-    # memory
-    w::V  # last period wage
-end
-
 function consumption(household::Household{Float64}, model::monetary_model)
 
     consumption_amount = min(household.w * 0.1 + household.deposits * 0.01, household.deposits)
