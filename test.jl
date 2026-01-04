@@ -1,7 +1,6 @@
 ########## test the model ###########
 include("src/model.jl")
 
-
 Random.seed!(45)
 model = monetary_model{Float64}()
 
@@ -18,9 +17,7 @@ populate!(model,        # model
 
 populate_labour_market!(model)
 
-
-
-df = simulate(model, 21, false)
+df = simulate(model, 21, true)
 
 plot(df.inventory, title = "Total Inventory")
 plot(df.consumption, title = "Daily Consumption")

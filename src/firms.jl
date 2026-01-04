@@ -1,23 +1,4 @@
 
-mutable struct Firm{V <: AbstractFloat}
-
-    const id::Int64
-    bank_id::Int64  # bank where the firm has an account
-    employees_ids::Vector{Int64}  # list of household ids employed by the firm
-    
-    # balance sheet - assets
-    deposits::V      # bank deposits
-    fixed_assets::V  # machinery, equipment, etc.
-    inventory::V     # goods in stock (units of output)
-
-    # balance sheet - liabilities
-    loans::V        # bank loans
-
-    # memory
-    labour_cost::V  # last period total labour cost
-    p::V             # price level of the firm's product
-end
-
 function firm_capacity(firm::Firm{Float64}, model::monetary_model)
 
     #@assert 1 - model.α - model.β < 0 "Returns to scale must be decreasing (1 - α - β < 0)"
