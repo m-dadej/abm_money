@@ -1,3 +1,7 @@
+Current model status:
+
+it's account and stock flow consistent. The real economy is really bad but I guess it's ok if one is interested in monetary changes and mechanisms.
+
 # Agent-Based Monetary Model: Mathematical Description
 
 This document provides a formal mathematical description of the agent-based monetary model implemented in the provided Julia code. The model is stock-flow consistent and features endogenous money creation through bank lending.
