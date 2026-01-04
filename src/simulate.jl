@@ -1,5 +1,9 @@
 ############ initiate model ###########
 
+Base.@kwdef mutable struct simulation_params{V <: AbstractFloat}
+
+end    
+
 function populate!(model::monetary_model, 
                     total_deposit::Float64, 
                     total_bank_capital::Float64,
@@ -98,7 +102,13 @@ end
 
 ########### simulation ############
 
-function simulate(model, T::Int64, verbose::Bool)
+function simulate(model, 
+                  T::Int64, 
+                  wage_step::Int64,
+                  produce_step::Int64,
+                  consume_step::Int64,
+                  dividend_step::Int64,
+                  verbose::Bool)
 
     aggregate_stats = DataFrame(money = zeros(Float64, T), 
                                  hh_capital = zeros(Float64, T), 
@@ -119,11 +129,11 @@ function simulate(model, T::Int64, verbose::Bool)
         ###### payout of wages #####
         for firm in model.firms 
 
-            # skip if not firm's turn - each firm pays once in a month
-            #firm.id % 30 != t % 30 ? continue : nothing
+        firm.id % wage_step != t % wage_step ? continue : nothing  # firms pay wages once in a week
+
             firm.labour_cost = 0.0
             for employee in firm.employees_ids
-                wage = 1
+                wage = 1.5
                 model.households[employee].deposits += wage
                 model.households[employee].w = wage
                 firm.deposits -= wage
@@ -140,26 +150,25 @@ function simulate(model, T::Int64, verbose::Bool)
         ###### produce and set price ######
         GDP = 0.0
         for firm in model.firms
-            
-            # skip if not firm's turn - each firm produces once a week
-            #firm.id % 7 != t % 7 ? continue : nothing
+
+            firm.id % produce_step != t % produce_step ? continue : nothing  # firms produce once in a week
+
             prod = production(firm, model)
 
             GDP += prod
             firm.inventory += prod
 
             # price setting
-            firm.p *= (firm.labour_cost / (firm_capacity(firm, model) * firm.p)) * (price_level(model) / firm.p)
-            #println("Firm $(firm.id), labour diff : $(firm.labour_cost / firm_capacity(firm, model)), rel price: $(price_level(model) / firm.p)")
+            produce_to_wage_freq = wage_step / produce_step # to adjust for different frequencies of wage and production payment
+            firm.p *= ((firm.labour_cost * produce_to_wage_freq) / (firm_capacity(firm, model) * firm.p)) * (price_level(model) / firm.p)
         end
-        #println(price_level(model))
 
         ###### consume #####
         total_consumption = 0.0
         for household in model.households
-            
-            # skip if not household's turn - each household consumes once every 3 days
-            #household.id % 3 != t % 3 ? continue : nothing
+
+            # consume once in a few days
+            household.id % consume_step != t % consume_step ? continue : nothing
 
             consumption_amount = consumption(household, model)
             consumption_amount == 0.0 ? continue : nothing
@@ -198,7 +207,7 @@ function simulate(model, T::Int64, verbose::Bool)
         ###### dividend payout #####
         for firm in model.firms 
             # pay once in a year
-            firm.id % 4 != t % 4 ? continue : nothing
+            firm.id % dividend_step != t % dividend_step ? continue : nothing
 
             excess_capital = firm.deposits - (firm.fixed_assets * 0.4)
             excess_capital <= 0.0 ? continue : nothing
