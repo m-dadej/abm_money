@@ -38,10 +38,10 @@ function production(firm::Firm{Float64}, model::monetary_model)
 
     capacity = firm_capacity(firm, model)
 
-    inv_target = 60 * firm.p # target inventory level
+    inv_target = 800# target inventory level
 
-    #actual_production = capacity * (1 - (firm.inventory / inv_target))^2
-    actual_production = firm.inventory < inv_target ? capacity : 0.0
+    actual_production = capacity * (1 - (firm.inventory / inv_target))^2
+    #actual_production = firm.inventory < inv_target ? capacity : 0.0
 
     return actual_production
 end

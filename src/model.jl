@@ -14,7 +14,7 @@ Base.@kwdef mutable struct monetary_model{V <: AbstractFloat}
 
     # model parameters
     min_reserve_ratio::V = 0.05
-    tfr::V = 1.2 # total factor productivity
+    tfr::V = 2 # total factor productivity
     α::V = 0.35 # capital elasticity
     β::V = 0.7 # labor elasticity
     n_hh::Int64 = 0 # number of households

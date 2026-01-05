@@ -114,16 +114,14 @@ function simulate(model, T::Int64, verbose::Bool)
     [model.firms[i].p = p for i in 1:model.n_firms]
 
     ##### simulation #####
-    for t in 1:T
+    for t in 1:T # each t is a month
 
         ###### payout of wages #####
         for firm in model.firms 
 
-            # skip if not firm's turn - each firm pays once in a month
-            #firm.id % 30 != t % 30 ? continue : nothing
             firm.labour_cost = 0.0
             for employee in firm.employees_ids
-                wage = 1
+                wage = 2
                 model.households[employee].deposits += wage
                 model.households[employee].w = wage
                 firm.deposits -= wage
@@ -149,7 +147,7 @@ function simulate(model, T::Int64, verbose::Bool)
             firm.inventory += prod
 
             # price setting
-            firm.p *= (firm.labour_cost / (firm_capacity(firm, model) * firm.p)) * (price_level(model) / firm.p)
+            firm.p *= (firm.labour_cost / (firm_capacity(firm, model) * firm.p)) *  (price_level(model) / firm.p)^1.0
             #println("Firm $(firm.id), labour diff : $(firm.labour_cost / firm_capacity(firm, model)), rel price: $(price_level(model) / firm.p)")
         end
         #println(price_level(model))
@@ -168,7 +166,7 @@ function simulate(model, T::Int64, verbose::Bool)
             no_inventory_firms = findall([(model.firms[i].inventory * model.firms[i].p) < consumption_amount for i in 1:model.n_firms])  # firms unable to satisfy consumption
 
             if length(no_inventory_firms) == model.n_firms
-                #verbose ? println("No firm at time $t has enough inventory for household $(household.id)'s consumption.") : nothing
+                verbose ? println("No firm at time $t has enough inventory for household $(household.id)'s consumption.") : nothing
                 continue
             end
             matching_probs = match_probability(model)                       # get matching probabilities

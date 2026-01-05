@@ -1,3 +1,4 @@
+
 ########## test the model ###########
 include("src/model.jl")
 
@@ -17,7 +18,7 @@ populate!(model,        # model
 
 populate_labour_market!(model)
 
-df = simulate(model, 21, true)
+df = simulate(model, 24, true)
 
 plot(df.inventory, title = "Total Inventory")
 plot(df.consumption, title = "Daily Consumption")
@@ -25,3 +26,9 @@ plot(df.production, title = "Daily Production")
 plot(df.firm_capital, title = "Total Firm Capital")
 plot(df.hh_capital, title = "Total Household Capital")
 plot(df.p, title = "Price Level")
+plot(df.reserves)
+
+
+
+plot(df.production, title = "Daily Production")
+plot!(df.p)
