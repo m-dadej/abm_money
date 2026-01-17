@@ -1,5 +1,5 @@
 ############ initiate model ###########
-
+# test
 function populate!(model::monetary_model, 
                     total_deposit::Float64, 
                     total_bank_capital::Float64,
@@ -10,7 +10,6 @@ function populate!(model::monetary_model,
                     n_hh::Int64, 
                     n_banks::Int64,
                     n_firms::Int64)
-
     model.n_hh = n_hh
     model.n_banks = n_banks
     model.n_firms = n_firms
