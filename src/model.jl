@@ -5,7 +5,14 @@ using StatsBase
 using DataFrames
 using Plots
 
-include("agents.jl")
+include("central_bank.jl")
+include("government.jl")
+include("banks.jl")
+include("households.jl")
+include("firms.jl")
+include("scenarios.jl")
+include("simulate.jl")
+
 
 Base.@kwdef mutable struct monetary_model{V <: AbstractFloat}
     
@@ -14,7 +21,7 @@ Base.@kwdef mutable struct monetary_model{V <: AbstractFloat}
 
     # model parameters
     min_reserve_ratio::V = 0.05
-    tfr::V = 1.2 # total factor productivity
+    tfr::V = 2 # total factor productivity
     α::V = 0.35 # capital elasticity
     β::V = 0.7 # labor elasticity
     n_hh::Int64 = 0 # number of households
@@ -26,15 +33,10 @@ Base.@kwdef mutable struct monetary_model{V <: AbstractFloat}
     banks::Vector{Bank{V}} = Bank[]
     households::Vector{Household{V}} = Household[]
     firms::Vector{Firm{V}} = Firm[]
+
+    
 end
 
-include("central_bank.jl")
-include("government.jl")
-include("firms.jl")
-include("households.jl")
-include("scenarios.jl")
-include("banks.jl")
-include("simulate.jl")
 
 function money_supply(model::monetary_model, type::Symbol)
     total_deposits = 0.0

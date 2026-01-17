@@ -1,8 +1,21 @@
+
+
 function consumption(household::Household{Float64}, model::monetary_model)
 
-    consumption_amount = min(household.w * 0.1 + household.deposits * 0.01, household.deposits)
+    consumption = min(household.w * 0.1 + household.deposits * 0.01, household.deposits)
 
-    return consumption_amount
+    return consumption
+end
+
+function consumption(model::monetary_model)
+
+    consumptions = zeros(Float64, length(model.households))
+    
+    for household in model.households
+        consumptions[household.id] = consumption(household, model)
+    end    
+
+    return consumptions
 end
 
 function take_loan!(household::Household{Float64}, loan_amount::Float64, model::monetary_model)

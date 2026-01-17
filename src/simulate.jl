@@ -66,7 +66,7 @@ function populate!(model::monetary_model,
     firm_deposit_distribution .= firm_deposit_distribution ./ sum(firm_deposit_distribution) .* firm_total_deposits
     for i in 1:n_firms
         bank_id = sample(1:n_banks, Weights(bank_shares)) # chance of choosing a bank proportional to its size
-        push!(model.firms, Firm{Float64}(i, bank_id, Float64[], firm_deposit_distribution[i], firm_capital_goods / n_firms, 0.0, 0.0, 0.0, 0.0))
+        push!(model.firms, Firm{Float64}(i, bank_id, Float64[], firm_deposit_distribution[i], firm_capital_goods / n_firms, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0))
 
         model.banks[bank_id].deposits += model.firms[i].deposits
         model.banks[bank_id].reserves += model.firms[i].deposits
@@ -120,16 +120,14 @@ function simulate(model,
     [model.firms[i].p = p for i in 1:model.n_firms]
 
     ##### simulation #####
-    for t in 1:T
+    for t in 1:T # each t is a month
 
         ###### payout of wages #####
         for firm in model.firms 
 
-        firm.id % wage_step != t % wage_step ? continue : nothing  # firms pay wages once in a week
-
             firm.labour_cost = 0.0
             for employee in firm.employees_ids
-                wage = 1.5
+                wage = 2
                 model.households[employee].deposits += wage
                 model.households[employee].w = wage
                 firm.deposits -= wage
@@ -153,10 +151,10 @@ function simulate(model,
 
             GDP += prod
             firm.inventory += prod
+            firm.Q_o = firm.inventory # watch out if the value is referenced?
 
-            # price setting
-            produce_to_wage_freq = wage_step / produce_step # to adjust for different frequencies of wage and production payment
-            firm.p *= ((firm.labour_cost * produce_to_wage_freq) / (firm_capacity(firm, model) * firm.p)) * (price_level(model) / firm.p)
+            price_update!(firm, model)
+            #println("Firm $(firm.id), labour diff : $(firm.labour_cost / firm_capacity(firm, model)), rel price: $(price_level(model) / firm.p)")
         end
 
         ###### consume #####
@@ -186,6 +184,7 @@ function simulate(model,
             
             seller_id = sample(1:model.n_firms, Weights(matching_probs))    # sample
 
+
             # transaction operations
             household.deposits -= consumption_amount 
             total_consumption += consumption_amount
@@ -195,6 +194,7 @@ function simulate(model,
 
             model.firms[seller_id].deposits += consumption_amount
             model.firms[seller_id].inventory -= (consumption_amount / model.firms[seller_id].p)
+            model.firms[seller_id].Q_d += (consumption_amount / model.firms[seller_id].p) # update the total demanded quantity for future planning
 
             model.banks[model.firms[seller_id].bank_id].deposits += consumption_amount
             model.banks[model.firms[seller_id].bank_id].reserves += consumption_amount
@@ -235,8 +235,6 @@ function simulate(model,
         aggregate_stats.p[t] = price_level(model)
 
         account_check(model)
-
-        # progress bar
         if verbose
             progress = round(t / T * 100)
             print("\r[")
@@ -249,8 +247,6 @@ function simulate(model,
             print("] $progress %")
         end
     end    
-
-    
 
     return aggregate_stats
 end    
