@@ -5,6 +5,7 @@ using StatsBase
 using DataFrames
 using Plots
 
+include("utils.jl")
 include("agents.jl")
 
 Base.@kwdef mutable struct monetary_model{V <: AbstractFloat}

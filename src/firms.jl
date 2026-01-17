@@ -1,4 +1,19 @@
 
+function price_update!(firm::Firm{Float64}, model::monetary_model)
+    
+    π_c = (firm.labour_cost / (firm_capacity(firm, model) * firm.p)) - 1.0 # cost push inflation
+    
+    if (firm.Q_o <= firm.Q_d) & (firm.p < price_level(model)) # high demand & low price case
+        π_d = firm.Q_d / firm.Q_o - 1.0
+    elseif (firm.Q_o > firm.Q_d) & (firm.p >= price_level(model)) # low demand & high price case
+        π_d = firm.Q_d / firm.Q_o - 1.0
+    else
+        π_d = 0.0
+    end
+
+    firm.p *= (1 + π_c) * (1 + π_d)
+end    
+
 function firm_capacity(firm::Firm{Float64}, model::monetary_model)
 
     #@assert 1 - model.α - model.β < 0 "Returns to scale must be decreasing (1 - α - β < 0)"

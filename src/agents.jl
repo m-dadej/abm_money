@@ -12,9 +12,11 @@ mutable struct Firm{V <: AbstractFloat}
     # balance sheet - liabilities
     loans::V        # bank loans
 
-    # memory
+    # memory - values at time t-1
     labour_cost::V  # last period total labour cost
-    p::V             # price level of the firm's product
+    p::V    # price level of the firm's product 
+    Q_d::V  # quantity demanded 
+    Q_o::V  # quantity supplied 
 end
 
 mutable struct Household{V <: AbstractFloat}

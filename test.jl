@@ -18,7 +18,7 @@ populate!(model,        # model
 
 populate_labour_market!(model)
 
-df = simulate(model, 24, true)
+df = simulate(model, 36, true)
 
 plot(df.inventory, title = "Total Inventory")
 plot(df.consumption, title = "Daily Consumption")
@@ -32,3 +32,9 @@ plot(df.reserves)
 
 plot(df.production, title = "Daily Production")
 plot!(df.p)
+
+
+2+2
+
+v = [1,2,3,4]
+
