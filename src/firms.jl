@@ -49,6 +49,7 @@ end
 
 match_probability(model::monetary_model) = [match_probability(model.firms[i], model) for i in 1:model.n_firms]
 
+
 function production(firm::Firm{Float64}, model::monetary_model)
 
     capacity = firm_capacity(firm, model)

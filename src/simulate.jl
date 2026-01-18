@@ -112,11 +112,17 @@ function simulate(model, T::Int64, verbose::Bool)
                                  inventory = zeros(Float64, T), 
                                  production = zeros(Float64, T),
                                  consumption = zeros(Float64, T),
-                                 p = zeros(Float64, T))
+                                 p = zeros(Float64, T),
+                                 slag = zeros(Float64, T))
 
     ###### initial conditions #####
     p = 1.0 # price level
     [model.firms[i].p = p for i in 1:model.n_firms]
+
+    # when firms have no memory of past demand, they assume it's equal to their max capacity (optimistically)
+    for firm in model.firms
+        firm.Q_d = firm_capacity(firm, model) * 0.3
+    end
 
     ##### simulation #####
     for t in 1:T # each t is a month
@@ -126,7 +132,7 @@ function simulate(model, T::Int64, verbose::Bool)
 
             firm.labour_cost = 0.0
             for employee in firm.employees_ids
-                wage = 2.5
+                wage = 1.5
                 model.households[employee].deposits += wage
                 model.households[employee].w = wage
                 firm.deposits -= wage
@@ -236,6 +242,7 @@ function simulate(model, T::Int64, verbose::Bool)
         aggregate_stats.production[t] = GDP
         aggregate_stats.consumption[t] = total_consumption
         aggregate_stats.p[t] = price_level(model)
+        aggregate_stats.slag[t] = GDP / firm_capacity(model)
 
         account_check(model)
         if verbose
