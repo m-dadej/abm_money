@@ -66,7 +66,12 @@ function populate!(model::monetary_model,
     firm_deposit_distribution .= firm_deposit_distribution ./ sum(firm_deposit_distribution) .* firm_total_deposits
     for i in 1:n_firms
         bank_id = sample(1:n_banks, Weights(bank_shares)) # chance of choosing a bank proportional to its size
-        push!(model.firms, Firm{Float64}(i, bank_id, Float64[], firm_deposit_distribution[i], firm_capital_goods / n_firms, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0))
+        push!(model.firms, Firm{Float64}(i, 
+                                         bank_id, Float64[],
+                                        firm_deposit_distribution[i], 
+                                        firm_capital_goods / n_firms, 
+                                        firm_capital_goods / n_firms,
+                                        0.0, 0.0, 0.0, 1.0, 1.0))
 
         model.banks[bank_id].deposits += model.firms[i].deposits
         model.banks[bank_id].reserves += model.firms[i].deposits
@@ -121,7 +126,7 @@ function simulate(model, T::Int64, verbose::Bool)
 
             firm.labour_cost = 0.0
             for employee in firm.employees_ids
-                wage = 2
+                wage = 2.5
                 model.households[employee].deposits += wage
                 model.households[employee].w = wage
                 firm.deposits -= wage
@@ -148,6 +153,7 @@ function simulate(model, T::Int64, verbose::Bool)
             firm.Q_o = firm.inventory # watch out if the value is referenced?
 
             price_update!(firm, model)
+            firm.Q_d = 1.0  # reset quantity demanded for the new period
             #println("Firm $(firm.id), labour diff : $(firm.labour_cost / firm_capacity(firm, model)), rel price: $(price_level(model) / firm.p)")
         end
         #println(price_level(model))
@@ -159,41 +165,43 @@ function simulate(model, T::Int64, verbose::Bool)
             # skip if not household's turn - each household consumes once every 3 days
             #household.id % 3 != t % 3 ? continue : nothing
 
-            consumption_amount = consumption(household, model)
-            consumption_amount == 0.0 ? continue : nothing
+            consumption_budget = consumption(household, model)
+            consumption_budget == 0.0 ? continue : nothing
 
-            # search and match with a firm
-            no_inventory_firms = findall([(model.firms[i].inventory * model.firms[i].p) < consumption_amount for i in 1:model.n_firms])  # firms unable to satisfy consumption
+            matching_probs = match_probability(model)
+            realized_consumption = 0.0
 
-            if length(no_inventory_firms) == model.n_firms
-                verbose ? println("No firm at time $t has enough inventory for household $(household.id)'s consumption.") : nothing
-                continue
-            end
-            matching_probs = match_probability(model)                       # get matching probabilities
-            #println(matching_probs)
-            matching_probs[no_inventory_firms] .= 0.0                       # set probabilities of unable firms to zero
-            if any(isnan.(matching_probs))
-                error("NaN encountered in matching probabilities at time $t for household $(household.id). | Matching probs: $matching_probs")
-            end
-            matching_probs .= matching_probs ./ sum(matching_probs)         # re-normalize
+            # look for sellers until consumption budget is met or no more firms to match
+            while (realized_consumption < consumption_budget) && (sum(matching_probs) > 0.0)
+                
+                seller_id = sample(1:model.n_firms, Weights(matching_probs))    # sample
+                available_amount = model.firms[seller_id].inventory * model.firms[seller_id].p
+
+                declared_amount = consumption_budget - realized_consumption # how much is still needed
+                consumption_amount = min(available_amount, declared_amount) # take what is available or what is needed
+                matching_probs[seller_id] = 0.0 # remove this firm from the matching pool
+                model.firms[seller_id].Q_d += (declared_amount / model.firms[seller_id].p) # update the total demanded quantity for future planning
+                
+                sum(matching_probs) == 0.0 ? println("No firm at time $t has enough inventory for hhh $(household.id)") : nothing 
+                consumption_amount == 0.0 ? continue : nothing
+                
+                realized_consumption += consumption_amount  # update realized consumption
+
+                # update firm's records
+                model.firms[seller_id].inventory -= (consumption_amount / model.firms[seller_id].p)
             
-            seller_id = sample(1:model.n_firms, Weights(matching_probs))    # sample
+                # transaction financial operations
+                household.deposits -= consumption_amount 
+                model.firms[seller_id].deposits += consumption_amount
+                total_consumption += (consumption_amount / model.firms[seller_id].p)
 
+                model.banks[household.bank_id].deposits -= consumption_amount
+                model.banks[household.bank_id].reserves -= consumption_amount
 
-            # transaction operations
-            household.deposits -= consumption_amount 
-            total_consumption += consumption_amount
-
-            model.banks[household.bank_id].deposits -= consumption_amount
-            model.banks[household.bank_id].reserves -= consumption_amount
-
-            model.firms[seller_id].deposits += consumption_amount
-            model.firms[seller_id].inventory -= (consumption_amount / model.firms[seller_id].p)
-            model.firms[seller_id].Q_d += (consumption_amount / model.firms[seller_id].p) # update the total demanded quantity for future planning
-
-            model.banks[model.firms[seller_id].bank_id].deposits += consumption_amount
-            model.banks[model.firms[seller_id].bank_id].reserves += consumption_amount
-        end    
+                model.banks[model.firms[seller_id].bank_id].deposits += consumption_amount
+                model.banks[model.firms[seller_id].bank_id].reserves += consumption_amount
+            end    
+        end
 
         ###### dividend payout #####
         for firm in model.firms 

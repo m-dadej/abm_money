@@ -1,17 +1,17 @@
 
 function price_update!(firm::Firm{Float64}, model::monetary_model)
     
-    π_c = (firm.labour_cost / (firm_capacity(firm, model) * firm.p)) # cost push inflation
+    π_c = (firm.labour_cost / (firm_capacity(firm, model) * firm.p))# cost push inflation
     
     if (firm.Q_o <= firm.Q_d) & (firm.p < price_level(model)) # high demand & low price case
-        π_d = firm.Q_d / firm.Q_o
+        π_d = firm.Q_d / firm.Q_o - 1
     elseif (firm.Q_o > firm.Q_d) & (firm.p >= price_level(model)) # low demand & high price case
-        π_d = firm.Q_d / firm.Q_o
+        π_d = firm.Q_d / firm.Q_o - 1
     else
-        π_d = 1.0
+        π_d = 0.0
     end
 
-    firm.p *= π_c * π_d
+    firm.p *= (1 + π_c) * (π_d + 1)
 end    
 
 function firm_capacity(firm::Firm{Float64}, model::monetary_model)
@@ -54,14 +54,14 @@ function production(firm::Firm{Float64}, model::monetary_model)
     capacity = firm_capacity(firm, model)
 
     if (firm.Q_o <= firm.Q_d) & (firm.p >= price_level(model))
-        γ_d = firm.Q_d / firm.Q_o - 1.0
+        γ_d = firm.Q_d / firm.Q_o
     elseif (firm.Q_o > firm.Q_d) & (firm.p < price_level(model))
-        γ_d = firm.Q_d / firm.Q_o - 1.0
+        γ_d = firm.Q_d / firm.Q_o
     else
-        γ_d = 0.0
+        γ_d = 1.0
     end
 
-    actual_production = min(capacity, firm.Q_o * (1 + γ_d))
+    actual_production = min(capacity, firm.Q_o * γ_d)
     #actual_production = capacity * (1 - (firm.inventory / inv_target))^2
     #actual_production = firm.inventory < inv_target ? capacity : 0.0
 
